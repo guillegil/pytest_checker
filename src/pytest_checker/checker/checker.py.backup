@@ -1,0 +1,188 @@
+
+import inspect
+import ast
+from typing import Any, Dict, List, Optional, Union
+from contextlib import contextmanager
+
+from advanced_logger import AdvancedLogger
+
+class TestChecker:
+    def __init__(self, *args, **kwargs):
+        if 'pytest_report_logger_instance' not in AdvancedLogger._instances:
+            self.log = AdvancedLogger('pytest_report_logger_instance')
+            self.log.init_term_handler('pytest_checker_term_handler', level='info')
+        else:
+            self.log = AdvancedLogger('pytest_report_logger_instance')
+    
+        self.__failed_checks    : List[str] = []
+        self.__group_stack      : List[str] = []
+        self.__in_group_context : bool = False
+
+
+    def _get_call_info(self) -> Dict[str, Any]:
+        """Extract variable names and source code from the calling frame"""
+        frame = inspect.currentframe().f_back.f_back
+        try:
+            filename = frame.f_code.co_filename
+            lineno = frame.f_lineno
+            
+            with open(filename, 'r') as f:
+                lines = f.readlines()
+                call_line = lines[lineno - 1].strip()
+            
+            # Parse the AST of the line
+            tree = ast.parse(call_line)
+            call = next((n for n in ast.walk(tree) if isinstance(n, ast.Call)), None)
+            
+            if call and hasattr(call, 'args'):
+                # Extract the args as strings
+                arg_sources = []
+                for arg in call.args:
+                    try:
+                        arg_text = ast.get_source_segment(call_line, arg)
+                        if arg_text:
+                            arg_sources.append(arg_text)
+                        else:
+                            arg_sources.append(str(arg))
+                    except:
+                        arg_sources.append("unknown")
+                
+                return {
+                    "call_line": call_line,
+                    "args": arg_sources,
+                    "function_name": getattr(call.func, 'attr', 'unknown')
+                }
+            
+            return {"call_line": call_line, "args": [], "function_name": "unknown"}
+        except Exception:
+            return {"call_line": "unknown", "args": [], "function_name": "unknown"}
+        finally:
+            del frame
+
+    def format_tree_output(self, items: List[list], first_line: str = None) -> str:
+        tree_output = (
+            f"\n" if first_line is None else f'{first_line}\n'
+        )
+
+        if len(items) == 1:
+            tree_line = ''
+            single_item = items[0]
+
+            for item in single_item:
+                tree_line += f'{item} '
+            
+            tree_output += f'   └─ {tree_line}'
+        else:
+            for idx, line in enumerate(items):
+                if not line:
+                    continue
+
+                tree_line = ''
+                for item in line:
+                    tree_line += f'{item} '
+
+                if idx == 0:
+                    tree_output += f'   └─ {tree_line}\n'
+                elif idx == len(items) - 1:
+                    tree_output += f'   └─ {tree_line}\n'
+                else:
+                    tree_output += f'   ├─ {tree_line}\n'
+
+        return tree_output
+    
+    def log_results(self, condition: bool, step_description: str, tree_output: str, **kwargs):
+
+        self.log.substep(f'Verify that: {step_description}')
+
+        if condition:
+            self.log.passed(tree_output, indent=3)
+        else:
+            self.log.fail(tree_output, indent=3)
+        
+        self.__failed_checks.append({
+            'condition': step_description,
+            'check_func': kwargs.get('check_func', None),
+            'passed': condition,
+            'failed': not condition,
+            'values': kwargs.get('values', {})
+        })
+
+    # ============================================================================
+    #                              CHECK METHODS
+    # ============================================================================
+    
+    def is_equal(self, lhs: Any, rhs: Any, step_description: str = None) -> bool:
+        """Check if lhs equals rhs"""
+        call_info = self._get_call_info()
+        arg_names = call_info.get("args", ["lhs", "rhs"])
+        lhs_name = arg_names[0] if len(arg_names) > 0 else "lhs"
+        rhs_name = arg_names[1] if len(arg_names) > 1 else "rhs"
+        
+        rhs_name_defined = str(rhs_name) != str(rhs)
+        lhs_name_defined = str(lhs_name) != str(lhs)
+
+        condition = (lhs == rhs)
+        
+        step_description: str = f"{lhs_name} == {rhs_name}"
+
+        if condition:
+            check_line  = f'Condition met: {lhs_name} == {rhs_name}'
+        else:
+            check_line  = f'Condition not met: {lhs_name} ≠ {rhs_name}'
+
+        tree_output: str = self.format_tree_output([
+            [f'{lhs_name}', '=', f'{lhs}'] if lhs_name_defined else [],
+            [f'{rhs_name}', '=', f'{rhs}'] if rhs_name_defined else [],
+        ], first_line=check_line)
+
+        values: dict = {
+            lhs_name: lhs,
+            rhs_name: rhs,
+        }
+
+        self.log_results(
+            condition, 
+            step_description, 
+            tree_output, 
+            values=values,
+            check='is_equal',
+        )
+
+    def is_true(self, value: Any, msg: str = None) -> bool:
+        """Check if value is truthy"""
+        call_info = self._get_call_info()
+        arg_names = call_info.get("args", ["value"])
+        value_name = arg_names[0] if len(arg_names) > 0 else "value"
+        
+        check_desc = msg or f"{value_name} is True"
+        condition = bool(value)
+        
+        if condition:
+            success_msg = self._format_single_tree_output(value_name, value, "truthy")
+            return self._log_check_result(condition, check_desc, success_msg, '')
+        else:
+            failure_msg = self._format_single_tree_output(value_name, value, "truthy")
+            return self._log_check_result(condition, check_desc, '', failure_msg)
+        
+
+    @contextmanager
+    def group(self, description: str, **kwargs):
+        """
+        Context manager for grouping related checks under a single step.
+        
+        Usage:
+            with check.group("User validation"):
+                check.is_equal(user.name, "John")
+                check.is_true(user.is_active)
+        """
+        self.__group_stack.append(description)
+        self.__in_group_context = True
+        
+        # Start the group as a step
+        self.log.step(description, **kwargs)
+                
+        try:
+            yield self
+        finally:
+            self.__group_stack.pop()
+            self.__in_group_context = len(self.__group_stack) > 0

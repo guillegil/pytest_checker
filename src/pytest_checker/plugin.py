@@ -7,17 +7,10 @@ from pathlib import Path
 from typing import Optional, List, Union, Any
 import warnings
 
+from pytest_checker import check
+from pytest_meta import meta
 
 class PytestPluginTemplate:
-    """
-    A modern pytest plugin template with commonly used hooks.
-    
-    This plugin demonstrates best practices for:
-    - Hook registration using @pytest.hookimpl
-    - Proper configuration management
-    - Lazy initialization
-    - Clean separation of concerns
-    """
     
     def __init__(self):
         pass
@@ -46,9 +39,7 @@ class PytestPluginTemplate:
     
     @pytest.hookimpl
     def pytest_collection_modifyitems(self, config: Config, items: List[Item]) -> None:
-        if not self.enabled:
-            return
-        # Add your item modification logic here
+        pass
     
     @pytest.hookimpl
     def pytest_generate_tests(self, metafunc) -> None:
@@ -58,7 +49,7 @@ class PytestPluginTemplate:
 
     @pytest.hookimpl
     def pytest_runtest_protocol(self, item: Item, nextitem: Optional[Item]) -> None:
-        pass
+        check.clear_results()
 
     @pytest.hookimpl
     def pytest_runtest_setup(self, item: Item) -> None:
@@ -68,7 +59,7 @@ class PytestPluginTemplate:
     @pytest.hookimpl
     def pytest_runtest_call(self, item: Item) -> None:
         """Called before each test call."""
-        pass
+        print(f'({meta.current_test.testcase=})  {meta.current_test.id=}')
 
     @pytest.hookimpl
     def pytest_runtest_teardown(self, item: Item, nextitem: Optional[Item]) -> None:
@@ -95,9 +86,8 @@ class PytestPluginTemplate:
     @pytest.hookimpl
     def pytest_terminal_summary(self, terminalreporter, exitstatus: int, config: Config) -> None:
         """Add a section to the terminal summary reporting."""
-        if not self.enabled:
-            return
-        # Add your terminal summary logic here
+        from pprint import pprint
+        pprint(check.session_results)
     
     # ========== ERROR/WARNING HOOKS ==========
     
@@ -121,24 +111,24 @@ _plugin_instance = PytestPluginTemplate()
 
 def pytest_addoption(parser) -> None:
     """Add command-line options for the plugin."""
-    group = parser.getgroup("template_plugin", "Template Plugin Options")
+    group = parser.getgroup("pytest_checker", "Template Plugin Options")
     
     # Add your custom options here
-    group.addoption(
-        "--enable-template",
-        action="store_true",
-        default=False,
-        help="Enable the template plugin functionality"
-    )
+    # group.addoption(
+    #     "--enable-template",
+    #     action="store_true",
+    #     default=False,
+    #     help="Enable the template plugin functionality"
+    # )
 
 
 def pytest_configure(config):
     """Register the plugin instance."""
-    config.pluginmanager.register(_plugin_instance, "template-plugin")
+    config.pluginmanager.register(_plugin_instance, "pytest_checker")
 
 
 def pytest_unconfigure(config):
     """Unregister the plugin instance."""
-    plugin = config.pluginmanager.get_plugin("template-plugin")
+    plugin = config.pluginmanager.get_plugin("pytest_checker")
     if plugin:
         config.pluginmanager.unregister(plugin)
