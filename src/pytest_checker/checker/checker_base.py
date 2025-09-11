@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 from contextlib import contextmanager
 
 from advanced_logger import AdvancedLogger
+from pytest import Config
+import pytest
 from pytest_meta import meta
 from .models.check_model import CheckResult
 
@@ -21,6 +23,10 @@ class TestCheckerBase:
         self.__group_stack: List[str] = []
         self.__in_group_context: bool = False
 
+        self.__max_fails: int = 1
+        self.__stop_on_fail: bool = False
+        self.__fail_count: int = 0
+
     @property
     def results(self) -> List[CheckResult]:
         return self.__results
@@ -28,6 +34,22 @@ class TestCheckerBase:
     @property
     def session_results(self) -> Dict[str, List[CheckResult]]:
         return self.__session_results
+
+    @property
+    def max_fails(self) -> int:
+        return self.__max_fails
+
+    @max_fails.setter
+    def max_fails(self, maxfails: int) -> None:
+        self.__max_fails = maxfails
+
+    @property
+    def stop_on_fail(self) -> bool:
+        return self.__stop_on_fail
+
+    @stop_on_fail.setter
+    def stop_on_fail(self, stop_on_fail: bool) -> None:
+        self.__stop_on_fail = stop_on_fail
 
     # ------------------------------
     # Call info: safer & resilient
@@ -110,6 +132,14 @@ class TestCheckerBase:
     # ------------------------------
     # Central check function
     # ------------------------------
+    def _log_result(self, result: CheckResult) -> None:
+        self.__results.append(result)
+
+        if meta.current_test.id in self.__session_results:
+            self.__session_results[meta.current_test.id].append(result)
+        else:
+            self.__session_results[meta.current_test.id] = [result]
+
     def _check(
         self,
         condition       : bool,
@@ -169,13 +199,8 @@ class TestCheckerBase:
             in_group=" > ".join(self.__group_stack) if self.__group_stack else ""
         )
 
-        self.__results.append(result)
-
-        if meta.current_test.id in self.__session_results:
-            self.__session_results[meta.current_test.id].append(result)
-        else:
-            self.__session_results[meta.current_test.id] = [result]
-
+        self._log_result(result)
+        
         return condition
     
     # ------------------------------
@@ -191,7 +216,6 @@ class TestCheckerBase:
     def clear_results(self) -> None:
         self.__results = []
 
-
     # ------------------------------
     # Grouping context
     # ------------------------------
@@ -206,4 +230,3 @@ class TestCheckerBase:
         finally:
             self.__group_stack.pop()
             self.__in_group_context = bool(self.__group_stack)
-            

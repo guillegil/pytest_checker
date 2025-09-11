@@ -59,18 +59,37 @@ class PytestPluginTemplate:
     @pytest.hookimpl
     def pytest_runtest_call(self, item: Item) -> None:
         """Called before each test call."""
-        print(f'({meta.current_test.testcase=})  {meta.current_test.id=}')
-
+        pass
+    
     @pytest.hookimpl
     def pytest_runtest_teardown(self, item: Item, nextitem: Optional[Item]) -> None:
-        """Called after each test teardown."""
         pass
 
-    @pytest.hookimpl
-    def pytest_runtest_makereport(self, item: Item, call: CallInfo) -> None:
-        """Called to create a TestReport for each test phase."""
-        pass
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(self, item: Item, call: CallInfo):
+        """Hookwrapper to modify the call-phase TestReport if soft assertions failed."""
+        outcome = yield
+        rep = outcome.get_result()
+        # only modify call-phase report
+        if rep.when != "call":
+            return
 
+        if not check:
+            return
+
+        if check.failed_results():
+            # produce a string summary: ensure TestCheckerBase implements format_failures()
+            # summary = check.format_failures()
+
+            # If the test already failed by exception, append the soft assertions info
+            if rep.outcome == "failed":
+                # rep.longrepr can be complex; convert to string and append
+                existing = str(rep.longrepr)
+                rep.longrepr = f"{existing}\n\nSoft assertions:\n{''}"
+            else:
+                rep.outcome = "failed"
+                rep.longrepr = ''
+                
     @pytest.hookimpl
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         """Called when a test report is ready to be logged."""
@@ -86,8 +105,7 @@ class PytestPluginTemplate:
     @pytest.hookimpl
     def pytest_terminal_summary(self, terminalreporter, exitstatus: int, config: Config) -> None:
         """Add a section to the terminal summary reporting."""
-        from pprint import pprint
-        pprint(check.session_results)
+        pass
     
     # ========== ERROR/WARNING HOOKS ==========
     
