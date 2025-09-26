@@ -11,11 +11,8 @@ from .models.check_model import CheckResult
 
 class TestCheckerBase:
     def __init__(self, *args, **kwargs):
-        if 'pytest_report_logger_instance' not in AdvancedLogger._instances:
-            self.log = AdvancedLogger('pytest_report_logger_instance')
-            self.log.init_term_handler('pytest_checker_term_handler', level='info')
-        else:
-            self.log = AdvancedLogger('pytest_report_logger_instance')
+        self.log = AdvancedLogger("pytest_checker")
+        self.log.init_term_handler('pytest_checker_term_handler', level='info')
 
         self.__results: List[CheckResult] = []
         self.__session_results: Dict[str, List[CheckResult]] = {}
@@ -50,6 +47,15 @@ class TestCheckerBase:
     @stop_on_fail.setter
     def stop_on_fail(self, stop_on_fail: bool) -> None:
         self.__stop_on_fail = stop_on_fail
+
+
+    def use_log(self, log: AdvancedLogger):
+        if log is None:
+            return 
+        
+        self.log.remove_handler('pytest_checker_term_handler')
+        del self.log
+        self.log = log
 
     # ------------------------------
     # Call info: safer & resilient
@@ -145,7 +151,7 @@ class TestCheckerBase:
         condition       : bool,
         description     : str,
         values          : Dict[str, Any],
-        show_values     : Optional[List[str]] = None,
+        show_values     : any = None,
         skip_redundant  : bool = True,
         **kwargs
     ) -> bool:
@@ -171,15 +177,18 @@ class TestCheckerBase:
         )
 
         items: List[List[str]] = []
-        keys_in_order = show_values or list(values.keys())
 
-        for k in keys_in_order:
-            if k not in values:
-                continue
-            val = values[k]
-            if skip_redundant and str(k) == str(val):
-                continue
-            items.append([str(k), "=", repr(val)])
+        for var, value in values.items():
+            try:
+                if (str(value) in str(var)) and skip_redundant:
+                    continue
+            except:
+                pass
+
+            if '0x' in description.lower():
+                items.append([str(var), "=", f'{hex(int(value))}'])
+            else:
+                items.append([str(var), "=", repr(value)])
 
         tree_output = self._format_tree_output(items, first_line=header)
 
@@ -187,9 +196,9 @@ class TestCheckerBase:
         self.log.substep(f"Verify that: {description}", **kwargs)
 
         if condition:
-            self.log.passed(tree_output, indent=3)
+            self.log.passed(tree_output)
         else:
-            self.log.fail(tree_output, indent=3)
+            self.log.fail(tree_output)
 
         # -- Store result -------------------------------- #
         result = CheckResult(
