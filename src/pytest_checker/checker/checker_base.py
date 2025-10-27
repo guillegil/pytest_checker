@@ -193,7 +193,14 @@ class TestCheckerBase:
         tree_output = self._format_tree_output(items, first_line=header)
 
         # Log
-        self.log.substep(f"Verify that: {description}", **kwargs)
+        self.log.substep(f"Verify that: {description}", procedure_info={
+            "check": {
+                "lhs": show_values[0],
+                "rhs": show_values[1],
+                "condition": condition,
+                "description": description
+            }
+        })
 
         if condition:
             self.log.passed(tree_output)
