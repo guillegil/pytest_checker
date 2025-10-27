@@ -192,11 +192,22 @@ class TestCheckerBase:
 
         tree_output = self._format_tree_output(items, first_line=header)
 
+        lhs = rhs = None
+
+        if show_values:
+            if len(show_values) >= 2:
+                rhs = show_values[0]
+                lhs = show_values[1]
+            elif len(show_values) == 1:
+                rhs = show_values[0]
+            else:
+                pass
+
         # Log
         self.log.substep(f"Verify that: {description}", procedure_info={
             "check": {
-                "lhs": show_values[0],
-                "rhs": show_values[1],
+                "lhs": lhs,
+                "rhs": rhs,
                 "condition": condition,
                 "description": description
             }
