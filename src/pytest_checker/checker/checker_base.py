@@ -196,10 +196,10 @@ class TestCheckerBase:
 
         if show_values:
             if len(show_values) >= 2:
-                rhs = show_values[0]
-                lhs = show_values[1]
+                lhs = show_values[0]
+                rhs = show_values[1]
             elif len(show_values) == 1:
-                rhs = show_values[0]
+                lhs = show_values[0]
             else:
                 pass
 
